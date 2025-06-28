@@ -16,9 +16,16 @@ pipeline {
 
     stage('Detect New Templates') {
       steps {
-        sh '''
-          git diff --name-only HEAD~1 HEAD | grep "^templates/.*\\.yaml$" > $NEW_TEMPLATES || true
-        '''
+        script {
+          def isFirstBuild = currentBuild.previousBuild == null
+          if (isFirstBuild) {
+            echo "⚠️ First build — scanning all templates in templates/"
+            sh "find $TEMPLATE_DIR -name '*.yaml' > $NEW_TEMPLATES"
+          } else {
+            echo "🔍 Detecting newly added templates..."
+            sh "git diff --name-only HEAD~1 HEAD | grep '^templates/.*\\.yaml\$' > $NEW_TEMPLATES || true"
+          }
+        }
       }
     }
 
@@ -31,7 +38,7 @@ pipeline {
       steps {
         sh '''
           while read template; do
-            echo "[*] Running nuclei with $template"
+            echo "[*] Running nuclei scan for $template"
             nuclei -l "$LIVE" -t "$template" -o "scan-$(basename $template .yaml)-$(date +%s).txt"
           done < "$NEW_TEMPLATES"
         '''
@@ -41,7 +48,7 @@ pipeline {
 
   post {
     always {
-      archiveArtifacts artifacts: '*.txt', fingerprint: true
+      archiveArtifacts artifacts: 'scan-*.txt', fingerprint: true
     }
   }
 }
